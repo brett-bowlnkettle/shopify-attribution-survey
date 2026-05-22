@@ -2,7 +2,7 @@
 
 client_id = "dae82839aa2eda85294f279528cea1cf"
 name = "Attribution Survey"
-application_url = "https://example.com"
+application_url = "https://shopify-attribution-survey.vercel.app/"
 embedded = true
 
 [build]
