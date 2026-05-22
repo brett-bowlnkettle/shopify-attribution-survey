@@ -1,3 +1,4 @@
+import {useEffect, useRef} from "react";
 import {useLoaderData, useNavigate, useSearchParams} from "react-router";
 import {authenticate} from "../shopify.server";
 import {boundary} from "@shopify/shopify-app-react-router/server";
@@ -127,6 +128,20 @@ export default function Reports() {
     useLoaderData();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const selectRef = useRef(null);
+
+  useEffect(() => {
+    const select = selectRef.current;
+    if (!select) return;
+    Array.from(select.querySelectorAll("s-option")).forEach((o) => o.remove());
+    DATE_RANGES.forEach((r) => {
+      const opt = document.createElement("s-option");
+      opt.setAttribute("value", r.value);
+      if (r.value === range) opt.setAttribute("selected", "");
+      opt.textContent = r.label;
+      select.appendChild(opt);
+    });
+  }, [range]);
 
   const responseRate =
     totalOrders > 0
@@ -141,7 +156,7 @@ export default function Reports() {
 
   function handleRangeChange(e) {
     const params = new URLSearchParams(searchParams);
-    params.set("range", e.currentTarget.value);
+    params.set("range", e.target.value);
     navigate(`?${params.toString()}`);
   }
 
@@ -150,16 +165,11 @@ export default function Reports() {
       <s-section heading={rangeLabel}>
         <s-stack gap="base">
           <s-select
-            label="Date range"
-            value={range}
-            onInput={handleRangeChange}
-          >
-            {DATE_RANGES.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </s-select>
+            ref={selectRef}
+            label="Date ranger"
+            name="range"
+            onChange={handleRangeChange}
+          />
           <s-stack direction="inline" gap="base">
             <Metric label="Survey responses" value={String(totalResponses)} />
             <Metric label="Total orders" value={String(totalOrders)} />
