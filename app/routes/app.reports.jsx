@@ -1,14 +1,36 @@
-import {useLoaderData} from "react-router";
+import {useLoaderData, useNavigate, useSearchParams} from "react-router";
 import {authenticate} from "../shopify.server";
 import {boundary} from "@shopify/shopify-app-react-router/server";
+
+const DATE_RANGES = [
+  {value: "today", label: "Today"},
+  {value: "7", label: "Last 7 days"},
+  {value: "30", label: "Last 30 days"},
+  {value: "90", label: "Last 90 days"},
+  {value: "365", label: "Last 12 months"},
+  {value: "all", label: "All time"},
+];
+
+function buildDateQuery(range) {
+  if (range === "all") return "";
+  const since = new Date();
+  if (range === "today") {
+    since.setHours(0, 0, 0, 0);
+  } else {
+    since.setDate(since.getDate() - parseInt(range, 10));
+  }
+  return `created_at:>='${since.toISOString().slice(0, 10)}'`;
+}
 
 export const loader = async ({request}) => {
   const {admin} = await authenticate.admin(request);
 
-  const since = new Date();
-  since.setDate(since.getDate() - 30);
-  const dateStr = since.toISOString().slice(0, 10);
-  const dateQuery = `created_at:>='${dateStr}'`;
+  const url = new URL(request.url);
+  const range = DATE_RANGES.find((r) => r.value === url.searchParams.get("range"))
+    ? url.searchParams.get("range")
+    : "30";
+  const rangeLabel = DATE_RANGES.find((r) => r.value === range)?.label ?? "Last 30 days";
+  const dateQuery = buildDateQuery(range);
 
   // Total orders in 30 days (for response rate denominator)
   let totalOrders = 0;
@@ -95,12 +117,16 @@ export const loader = async ({request}) => {
     currencyCode,
     attributionStats,
     totalNetSales: attributionStats.reduce((sum, a) => sum + a.netSales, 0),
+    range,
+    rangeLabel,
   };
 };
 
 export default function Reports() {
-  const {totalResponses, totalOrders, currencyCode, attributionStats, totalNetSales} =
+  const {totalResponses, totalOrders, currencyCode, attributionStats, totalNetSales, range, rangeLabel} =
     useLoaderData();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const responseRate =
     totalOrders > 0
@@ -113,20 +139,39 @@ export default function Reports() {
       currency: currencyCode || "USD",
     }).format(n);
 
+  function handleRangeChange(e) {
+    const params = new URLSearchParams(searchParams);
+    params.set("range", e.currentTarget.value);
+    navigate(`?${params.toString()}`);
+  }
+
   return (
     <s-page heading="Reports">
-      <s-section heading="Last 30 days">
-        <s-stack direction="inline" gap="base">
-          <Metric label="Survey responses" value={String(totalResponses)} />
-          <Metric label="Total orders" value={String(totalOrders)} />
-          <Metric label="Response rate" value={responseRate} />
-          <Metric label="Attributed net sales" value={fmt(totalNetSales)} />
+      <s-section heading={rangeLabel}>
+        <s-stack gap="base">
+          <s-select
+            label="Date range"
+            value={range}
+            onInput={handleRangeChange}
+          >
+            {DATE_RANGES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </s-select>
+          <s-stack direction="inline" gap="base">
+            <Metric label="Survey responses" value={String(totalResponses)} />
+            <Metric label="Total orders" value={String(totalOrders)} />
+            <Metric label="Response rate" value={responseRate} />
+            <Metric label="Attributed net sales" value={fmt(totalNetSales)} />
+          </s-stack>
         </s-stack>
       </s-section>
 
       <s-section heading="Top attributions">
         {attributionStats.length === 0 ? (
-          <s-text color="subdued">No survey responses in the last 30 days.</s-text>
+          <s-text color="subdued">No survey responses for {rangeLabel.toLowerCase()}.</s-text>
         ) : (
           <table style={{width: "100%", borderCollapse: "collapse"}}>
             <thead>
