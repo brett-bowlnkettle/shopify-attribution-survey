@@ -1,39 +1,87 @@
-import {useEffect, useRef} from "react";
-import {useLoaderData, useNavigate, useSearchParams} from "react-router";
+import {useEffect, useRef, useState} from "react";
+import {useLoaderData, useNavigate} from "react-router";
 import {authenticate} from "../shopify.server";
 import {boundary} from "@shopify/shopify-app-react-router/server";
 
 const DATE_RANGES = [
   {value: "today", label: "Today"},
+  {value: "yesterday", label: "Yesterday"},
   {value: "7", label: "Last 7 days"},
   {value: "30", label: "Last 30 days"},
   {value: "90", label: "Last 90 days"},
   {value: "365", label: "Last 12 months"},
-  {value: "all", label: "All time"},
+  {value: "custom", label: "Custom range"},
 ];
 
-function buildDateQuery(range) {
-  if (range === "all") return "";
-  const since = new Date();
-  if (range === "today") {
-    since.setHours(0, 0, 0, 0);
-  } else {
-    since.setDate(since.getDate() - parseInt(range, 10));
+function toDateStr(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function presetToPickerValue(preset) {
+  const today = new Date();
+  const to = toDateStr(today);
+  if (preset === "today") return `${to}--${to}`;
+  if (preset === "yesterday") {
+    const y = new Date(today);
+    y.setDate(y.getDate() - 1);
+    return `${toDateStr(y)}--${toDateStr(y)}`;
   }
-  return `created_at:>='${since.toISOString().slice(0, 10)}'`;
+  const days = parseInt(preset, 10);
+  if (!isNaN(days)) {
+    const from = new Date(today);
+    from.setDate(from.getDate() - days);
+    return `${toDateStr(from)}--${to}`;
+  }
+  return `${to}--${to}`;
+}
+
+function buildDateQuery(range, from, to) {
+  if (from && to) {
+    return `created_at:>='${from}' AND created_at:<='${to}'`;
+  }
+  if (range === "all" || !range) return "";
+  if (range === "today") {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return `created_at:>='${toDateStr(d)}'`;
+  }
+  if (range === "yesterday") {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    d.setHours(0, 0, 0, 0);
+    const end = new Date(d);
+    end.setDate(end.getDate() + 1);
+    return `created_at:>='${toDateStr(d)}' AND created_at:<'${toDateStr(end)}'`;
+  }
+  const since = new Date();
+  since.setDate(since.getDate() - parseInt(range, 10));
+  return `created_at:>='${toDateStr(since)}'`;
 }
 
 export const loader = async ({request}) => {
   const {admin} = await authenticate.admin(request);
 
   const url = new URL(request.url);
-  const range = DATE_RANGES.find((r) => r.value === url.searchParams.get("range"))
-    ? url.searchParams.get("range")
-    : "30";
-  const rangeLabel = DATE_RANGES.find((r) => r.value === range)?.label ?? "Last 30 days";
-  const dateQuery = buildDateQuery(range);
+  const rangeParam = url.searchParams.get("range");
+  const from = url.searchParams.get("from") || "";
+  const to = url.searchParams.get("to") || "";
 
-  // Total orders in 30 days (for response rate denominator)
+  const range =
+    from && to
+      ? "custom"
+      : DATE_RANGES.find((r) => r.value === rangeParam)?.value || "30";
+
+  let rangeLabel;
+  if (from && to) {
+    const f = new Date(from + "T00:00:00");
+    const t = new Date(to + "T00:00:00");
+    rangeLabel = `${f.toLocaleDateString("en-US", {month: "short", day: "numeric"})} – ${t.toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"})}`;
+  } else {
+    rangeLabel = DATE_RANGES.find((r) => r.value === range)?.label ?? "Last 30 days";
+  }
+
+  const dateQuery = buildDateQuery(range, from, to);
+
   let totalOrders = 0;
   try {
     const res = await admin.graphql(
@@ -51,7 +99,6 @@ export const loader = async ({request}) => {
     // fall back to 0
   }
 
-  // Paginate through orders and read attribution metafields
   const attributionMap = new Map();
   let totalResponses = 0;
   let currencyCode = "USD";
@@ -120,28 +167,71 @@ export const loader = async ({request}) => {
     totalNetSales: attributionStats.reduce((sum, a) => sum + a.netSales, 0),
     range,
     rangeLabel,
+    from,
+    to,
   };
 };
 
 export default function Reports() {
-  const {totalResponses, totalOrders, currencyCode, attributionStats, totalNetSales, range, rangeLabel} =
-    useLoaderData();
-  const [searchParams] = useSearchParams();
+  const {
+    totalResponses,
+    totalOrders,
+    currencyCode,
+    attributionStats,
+    totalNetSales,
+    range,
+    rangeLabel,
+    from,
+    to,
+  } = useLoaderData();
   const navigate = useNavigate();
-  const selectRef = useRef(null);
+  const modalRef = useRef(null);
+  const datePickerRef = useRef(null);
 
+  const [pendingRange, setPendingRange] = useState(range);
+  const [pendingPickerValue, setPendingPickerValue] = useState(() =>
+    range === "custom" && from && to
+      ? `${from}--${to}`
+      : presetToPickerValue(range),
+  );
+
+  // Re-sync picker state when loader data changes after navigation
   useEffect(() => {
-    const select = selectRef.current;
-    if (!select) return;
-    Array.from(select.querySelectorAll("s-option")).forEach((o) => o.remove());
-    DATE_RANGES.forEach((r) => {
-      const opt = document.createElement("s-option");
-      opt.setAttribute("value", r.value);
-      if (r.value === range) opt.setAttribute("selected", "");
-      opt.textContent = r.label;
-      select.appendChild(opt);
-    });
-  }, [range]);
+    setPendingRange(range);
+    const val =
+      range === "custom" && from && to
+        ? `${from}--${to}`
+        : presetToPickerValue(range);
+    setPendingPickerValue(val);
+    if (datePickerRef.current) datePickerRef.current.value = val;
+  }, [range, from, to]);
+
+  function handlePresetSelect(value) {
+    setPendingRange(value);
+    if (value !== "custom") {
+      const val = presetToPickerValue(value);
+      setPendingPickerValue(val);
+      if (datePickerRef.current) datePickerRef.current.value = val;
+    }
+  }
+
+  function handleDatePickerChange(e) {
+    setPendingPickerValue(e.target.value);
+    setPendingRange("custom");
+  }
+
+  function handleApply() {
+    if (pendingRange === "custom" && pendingPickerValue) {
+      const [f, t] = pendingPickerValue.split("--");
+      if (f && t) {
+        navigate(`?from=${f}&to=${t}`);
+        modalRef.current?.hideOverlay?.();
+        return;
+      }
+    }
+    navigate(`?range=${pendingRange}`);
+    modalRef.current?.hideOverlay?.();
+  }
 
   const responseRate =
     totalOrders > 0
@@ -154,22 +244,50 @@ export default function Reports() {
       currency: currencyCode || "USD",
     }).format(n);
 
-  function handleRangeChange(e) {
-    const params = new URLSearchParams(searchParams);
-    params.set("range", e.target.value);
-    navigate(`?${params.toString()}`);
-  }
-
   return (
     <s-page heading="Reports">
       <s-section heading={rangeLabel}>
         <s-stack gap="base">
-          <s-select
-            ref={selectRef}
-            label="Date ranger"
-            name="range"
-            onChange={handleRangeChange}
-          />
+          <s-button command="--show" commandFor="date-range-modal" icon="calendar">
+            {rangeLabel}
+          </s-button>
+
+          <s-modal ref={modalRef} id="date-range-modal" heading="Date range">
+            <s-grid gridTemplateColumns="200px 1fr" gap="base">
+              <s-stack gap="none">
+                {DATE_RANGES.map((r) => (
+                  <s-clickable
+                    key={r.value}
+                    padding="base"
+                    background={pendingRange === r.value ? "subdued" : undefined}
+                    borderRadius="base"
+                    onClick={() => handlePresetSelect(r.value)}
+                  >
+                    <s-text type={pendingRange === r.value ? "strong" : undefined}>
+                      {r.label}
+                    </s-text>
+                  </s-clickable>
+                ))}
+              </s-stack>
+              <s-date-picker
+                ref={datePickerRef}
+                type="range"
+                onChange={handleDatePickerChange}
+              />
+            </s-grid>
+
+            <s-button slot="primary-action" variant="primary" onClick={handleApply}>
+              Apply
+            </s-button>
+            <s-button
+              slot="secondary-actions"
+              command="--hide"
+              commandFor="date-range-modal"
+            >
+              Cancel
+            </s-button>
+          </s-modal>
+
           <s-stack direction="inline" gap="base">
             <Metric label="Survey responses" value={String(totalResponses)} />
             <Metric label="Total orders" value={String(totalOrders)} />
@@ -181,7 +299,9 @@ export default function Reports() {
 
       <s-section heading="Top attributions">
         {attributionStats.length === 0 ? (
-          <s-text color="subdued">No survey responses for {rangeLabel.toLowerCase()}.</s-text>
+          <s-text color="subdued">
+            No survey responses for {rangeLabel.toLowerCase()}.
+          </s-text>
         ) : (
           <table style={{width: "100%", borderCollapse: "collapse"}}>
             <thead>
