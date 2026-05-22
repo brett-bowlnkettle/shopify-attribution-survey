@@ -35,7 +35,7 @@ function AttributionSurvey() {
   const orderId = formatOrderId(orderConfirmation?.order?.id);
   const orderName = orderConfirmation?.number || "";
   const shopDomain = shopify?.shop?.myshopifyDomain || "";
-  const endpoint = "https://shopify-attribution-survey.vercel.app/apps/attribution-survey";
+  const endpoint = "https://v0-shopify-post-purchase-survey.vercel.app/api/shopify/survey-attribution";
   const hasAttributionSelection = Boolean(surveyAttributionName);
 
   useEffect(() => {
