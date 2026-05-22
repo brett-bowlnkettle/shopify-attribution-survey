@@ -35,19 +35,17 @@ function AttributionSurvey() {
   const orderId = formatOrderId(orderConfirmation?.order?.id);
   const orderName = orderConfirmation?.number || "";
   const shopDomain = shopify?.shop?.myshopifyDomain || "";
-  const endpoint = shopDomain
-    ? `https://${shopDomain}/apps/attribution-survey`
-    : "";
+  const endpoint = "https://shopify-attribution-survey.vercel.app/apps/attribution-survey";
   const hasAttributionSelection = Boolean(surveyAttributionName);
 
   useEffect(() => {
-    if (!endpoint) return;
+    if (!shopDomain) return;
 
     let ignoreResponse = false;
 
     async function loadAttributionOptions() {
       try {
-        const response = await fetch(endpoint);
+        const response = await fetch(`${endpoint}?shop=${encodeURIComponent(shopDomain)}`);
         if (!response.ok) return;
 
         const data = await response.json();

@@ -12,7 +12,12 @@ export const loader = async ({request}) => {
     return new Response(null, {status: 204, headers: CORS_HEADERS});
   }
 
-  const {session} = await authenticate.public.appProxy(request);
+  let session = null;
+  try {
+    ({session} = await authenticate.public.appProxy(request));
+  } catch {
+    // direct call, not through App Proxy
+  }
   const shop = session?.shop || new URL(request.url).searchParams.get("shop");
   let options;
 
@@ -31,7 +36,12 @@ export const action = async ({request}) => {
     return new Response(null, {status: 204, headers: CORS_HEADERS});
   }
 
-  const {session} = await authenticate.public.appProxy(request);
+  let session = null;
+  try {
+    ({session} = await authenticate.public.appProxy(request));
+  } catch {
+    // direct call, not through App Proxy
+  }
 
   const url = new URL(request.url);
   let data;
