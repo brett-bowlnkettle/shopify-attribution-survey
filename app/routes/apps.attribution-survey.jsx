@@ -1,26 +1,11 @@
 import {authenticate, unauthenticated} from "../shopify.server";
 import {getAttributionOptions} from "../models/attribution-settings.server";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Shopify-Shop-Domain",
-};
-
 export const loader = async ({request}) => {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {status: 204, headers: CORS_HEADERS});
-  }
+  const {sessionToken, cors} = await authenticate.public.checkout(request);
+  const shop = new URL(sessionToken.dest).hostname;
 
-  let session = null;
-  try {
-    ({session} = await authenticate.public.appProxy(request));
-  } catch {
-    // direct call, not through App Proxy
-  }
-  const shop = session?.shop || new URL(request.url).searchParams.get("shop");
   let options;
-
   try {
     const {admin} = await unauthenticated.admin(shop);
     options = await getAttributionOptions(admin);
@@ -28,33 +13,22 @@ export const loader = async ({request}) => {
     options = await getAttributionOptions();
   }
 
-  return Response.json({options}, {headers: CORS_HEADERS});
+  return cors(Response.json({options}));
 };
 
 export const action = async ({request}) => {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {status: 204, headers: CORS_HEADERS});
-  }
+  const {sessionToken, cors} = await authenticate.public.checkout(request);
+  const shop = new URL(sessionToken.dest).hostname;
 
-  let session = null;
-  try {
-    ({session} = await authenticate.public.appProxy(request));
-  } catch {
-    // direct call, not through App Proxy
-  }
-
-  const url = new URL(request.url);
   let data;
   try {
     data = JSON.parse(await request.text());
   } catch {
-    return Response.json({error: "Invalid JSON"}, {status: 400, headers: CORS_HEADERS});
+    return cors(Response.json({error: "Invalid JSON"}, {status: 400}));
   }
 
-  const shop = session?.shop || data.shop || url.searchParams.get("shop");
-
-  if (!shop || !data.orderId || !data.surveyAttributionName) {
-    return Response.json({error: "Missing required fields"}, {status: 400, headers: CORS_HEADERS});
+  if (!data.orderId || !data.surveyAttributionName) {
+    return cors(Response.json({error: "Missing required fields"}, {status: 400}));
   }
 
   try {
@@ -97,12 +71,12 @@ export const action = async ({request}) => {
     const errors = json.data?.metafieldsSet?.userErrors ?? [];
     if (errors.length > 0) {
       console.error("Metafield write errors:", errors);
-      return Response.json({error: errors[0].message}, {status: 422, headers: CORS_HEADERS});
+      return cors(Response.json({error: errors[0].message}, {status: 422}));
     }
   } catch (error) {
     console.error("Failed to write order metafields:", error);
-    return Response.json({error: "Failed to save attribution"}, {status: 500, headers: CORS_HEADERS});
+    return cors(Response.json({error: "Failed to save attribution"}, {status: 500}));
   }
 
-  return Response.json({ok: true}, {headers: CORS_HEADERS});
+  return cors(Response.json({ok: true}));
 };

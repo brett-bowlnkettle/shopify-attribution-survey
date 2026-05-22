@@ -35,7 +35,7 @@ function AttributionSurvey() {
   const orderId = formatOrderId(orderConfirmation?.order?.id);
   const orderName = orderConfirmation?.number || "";
   const shopDomain = shopify?.shop?.myshopifyDomain || "";
-  const endpoint = "https://v0-shopify-post-purchase-survey.vercel.app/api/shopify/survey-attribution";
+  const endpoint = "https://shopify-attribution-survey.vercel.app/apps/attribution-survey";
   const hasAttributionSelection = Boolean(surveyAttributionName);
 
   useEffect(() => {
@@ -45,7 +45,10 @@ function AttributionSurvey() {
 
     async function loadAttributionOptions() {
       try {
-        const response = await fetch(`${endpoint}?shop=${encodeURIComponent(shopDomain)}`);
+        const token = await shopify.sessionToken.get();
+        const response = await fetch(`${endpoint}?shop=${encodeURIComponent(shopDomain)}`, {
+          headers: {"Authorization": `Bearer ${token}`},
+        });
         if (!response.ok) return;
 
         const data = await response.json();
@@ -78,11 +81,14 @@ function AttributionSurvey() {
     setStatus("submitting");
 
     try {
+      const token = await shopify.sessionToken.get();
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          shop: shopDomain,
           orderId,
           orderName,
           surveyAttributionName,
