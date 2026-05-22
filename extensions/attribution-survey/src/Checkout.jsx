@@ -111,7 +111,7 @@ function AttributionSurvey() {
 
   return (
     <s-stack gap="base">
-      <s-heading>How did you hear about us?</s-heading>
+      <s-heading>How did you hear about us, JOHN?</s-heading>
       <s-text color="subdued">Select one</s-text>
 
       <s-stack
