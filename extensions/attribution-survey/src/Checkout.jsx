@@ -90,10 +90,8 @@ function AttributionSurvey() {
         },
         body: JSON.stringify({
           orderId,
-          orderName,
           surveyAttributionName,
           surveyAttributionDetails,
-          submittedAt: new Date().toISOString(),
         }),
       });
 
